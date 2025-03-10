@@ -15,6 +15,7 @@ jobs:
       CROSS_COMPILE: riscv64-linux-gnu-
       ARCH: riscv
     steps:
+      - uses: actions/checkout@v4
       - name: install prerequisites
         run: |
           apt-get update

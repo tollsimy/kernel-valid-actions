@@ -1,0 +1,97 @@
+name: cross compile and run kselftests
+
+on:
+  push:
+    branches:
+      - 'main'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
+    env:
+      CROSS_COMPILE: riscv64-linux-gnu-
+      ARCH: riscv
+    steps:
+      - name: install prerequisites
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends -y \
+            build-essential \
+            ca-certificates \
+            git \
+            libncurses-dev \
+            bison \
+            flex \
+            libssl-dev \
+            libelf-dev \
+            bc \
+            curl \
+            gcc-riscv64-linux-gnu \
+            libc6-dev-riscv64-cross \
+            linux-tools-common \
+            libcap-dev \
+            libnuma-dev \
+            libmount-dev \
+            libpopt-dev \
+            libbpf-dev \
+            python3-docutils \
+            nftables \
+            bridge-utils \
+            ethtool \
+            iproute2 \
+            iptables \
+            net-tools \
+            acl \
+            attr \
+            trace-cmd \
+            python3-pip \
+            mmdebstrap \
+            fuse \
+            libfuse-dev \
+            rsync \
+            libasound2-dev \
+            libmnl-dev \
+            libnetfilter-queue-dev \
+            jq \
+            clang \
+            cpio \
+            qemu-system-riscv64 \
+            opensbi
+      - name: clone sources
+        run: |
+          git clone git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git --depth 1
+      - name: build kernel
+        run: |
+          cd linux
+          make defconfig
+          make -j$(nproc)
+      - name: build kselftest
+        run: |
+          cd linux
+          make -j$(nproc) kselftest-install
+      - name: gen initramfs
+        run: |
+          curl https://busybox.net/downloads/busybox-1.37.0.tar.bz2 | tar xjf -
+          cp busybox_riscv_virt_defconfig busybox-1.37.0/configs/riscv_virt_defconfig
+          cd busybox-1.37.0
+          make riscv_virt_defconfig
+          LDFLAGS="--static" make -j$(nproc)
+          make install
+          cd ..
+          mkdir -p initramfs/{bin,sbin,etc,proc,sys,usr/{bin,sbin}}
+          cp -a busybox-1.37.0/_install/* initramfs/
+          mkdir -p initramfs/selftests
+          cp -a linux/tools/testing/selftests/kselftest_install/* initramfs/selftests/
+          cp init initramfs/
+          chmod +x initramfs/init
+          cd initramfs
+          find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
+      - name: run kselftest on QEMU
+        run: |
+          qemu-system-riscv64 -nographic -m 512 -machine virt \
+          -bios /usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.elf \
+          -kernel linux/arch/riscv/boot/Image -append "console=ttyS0 init=/init" \
+          -initrd initramfs.cpio.gz

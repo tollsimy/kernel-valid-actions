@@ -81,12 +81,12 @@ jobs:
           digest="blobs/$(jq .manifests[0].digest -r < index.json | sed 's/:/\//')"
           rootfs_tar="blobs/$(jq .layers[0].digest -r $digest | sed 's/:/\//')"
           mkdir -p initramfs-fedora/{bin,sbin,etc,proc,sys,usr/{bin,sbin}}
-          tar -xf $rootfs_tar -C initram-fedora
-          mkdir -p initram-fedora/selftests/
-          cp -a linux/tools/testing/selftests/kselftest_install/* initram-fedora/selftests/
-          cp init initram-fedora/
-          chmod +x initram-fedora/init
-          cd initram-fedora
+          tar -xf $rootfs_tar -C initramfs-fedora
+          mkdir -p initramfs-fedora/selftests/
+          cp -a linux/tools/testing/selftests/kselftest_install/* initramfs-fedora/selftests/
+          cp init initramfs-fedora/
+          chmod +x initramfs-fedora/init
+          cd initramfs-fedora
           find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs-fedora.cpio.gz
     #   - name: busybox
     #     run: |

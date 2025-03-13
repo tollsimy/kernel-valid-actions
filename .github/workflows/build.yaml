@@ -73,26 +73,39 @@ jobs:
         run: |
           cd linux
           make -j$(nproc) kselftest-install
-      - name: gen initramfs
+      - name: create initram
         run: |
-          curl https://busybox.net/downloads/busybox-1.37.0.tar.bz2 | tar xjf -
-          cp busybox_riscv_virt_defconfig busybox-1.37.0/configs/riscv_virt_defconfig
-          cd busybox-1.37.0
-          make riscv_virt_defconfig
-          LDFLAGS="--static" make -j$(nproc)
-          make install
-          cd ..
-          mkdir -p initramfs/{bin,sbin,etc,proc,sys,usr/{bin,sbin}}
-          cp -a busybox-1.37.0/_install/* initramfs/
-          mkdir -p initramfs/selftests
-          cp -a linux/tools/testing/selftests/kselftest_install/* initramfs/selftests/
-          cp init initramfs/
-          chmod +x initramfs/init
-          cd initramfs
-          find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
+          curl -o fedora-container.tar.xz https://dl.fedoraproject.org/pub/alt/risc-v/release/41/Container/riscv64/images/Fedora-Container-Base-Generic-41.20250128.riscv64.oci.tar.xz
+          tar -xf fedora-container.tar.xz
+          rm fedora-container.tar.xz
+          digest="blobs/$(jq .manifests[0].digest -r < index.json | sed 's/:/\//')"
+          rootfs_tar="blobs/$(jq .layers[0].digest -r $digest | sed 's/:/\//')"
+          mkdir -p initramfs-fedora/{bin,sbin,etc,proc,sys,usr/{bin,sbin}}
+          tar -xf $rootfs_tar -C initram-fedora
+          mkdir -p initram-fedora/selftests/
+          cp -a linux/tools/testing/selftests/kselftest_install/* initram-fedora/selftests/
+          cp init initram-fedora/
+          chmod +x initram-fedora/init
+          cd initram-fedora
+          find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs-fedora.cpio.gz
+    #   - name: busybox
+    #     run: |
+    #       curl https://busybox.net/downloads/busybox-1.37.0.tar.bz2 | tar xjf -
+    #       cp busybox_riscv_virt_defconfig busybox-1.37.0/configs/riscv_virt_defconfig
+    #       cd busybox-1.37.0
+    #       make riscv_virt_defconfig
+    #       LDFLAGS="--static" make -j$(nproc)
+    #       make install
+    #       cd ..
+    #       mkdir -p initramfs/{bin,sbin,etc,proc,sys,usr/{bin,sbin}}
+    #       cp -a busybox-1.37.0/_install/* initramfs/
+    #       cp init initramfs/
+    #       chmod +x initramfs/init
+    #       cd initramfs
+    #       find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
       - name: run kselftest on QEMU
         run: |
           qemu-system-riscv64 -nographic -m 512 -machine virt \
           -bios /usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.elf \
-          -kernel linux/arch/riscv/boot/Image -append "console=ttyS0 init=/init" \
-          -initrd initramfs.cpio.gz
+          -kernel linux/arch/riscv/boot/Image -append "console=ttyS0 root=/dev/ram" \
+          -initrd initramfs-fedora.cpio.gz

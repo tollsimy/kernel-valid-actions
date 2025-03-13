@@ -2,3 +2,4 @@ linux
 bzImage
 initram*
 busybox-*
+fedora-container-*

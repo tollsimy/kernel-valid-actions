@@ -109,3 +109,35 @@ jobs:
           -bios /usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.elf \
           -kernel linux/arch/riscv/boot/Image -append "console=ttyS0 root=/dev/ram" \
           -initrd initramfs-fedora.cpio.gz
+          - name: Package artifacts
+          run: |
+            # Create a directory for artifacts
+            mkdir -p artifacts
+            # Copy kernel and initramfs
+            cp linux/arch/riscv/boot/Image artifacts/
+            cp initramfs-fedora.cpio.gz artifacts/
+            # Create a tarball
+            tar -czvf kernel-artifacts.tar.gz artifacts/
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.run_number }}
+          release_name: Build ${{ github.run_number }}
+          body: |
+            RISC-V Kernel and Initramfs build ${{ github.run_number }}
+            Built from commit: ${{ github.sha }}
+          draft: false
+          prerelease: false
+      
+      - name: Upload artifacts to release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./kernel-artifacts.tar.gz
+          asset_name: kernel-artifacts.tar.gz
+          asset_content_type: application/gzip

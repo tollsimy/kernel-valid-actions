@@ -60,64 +60,74 @@ jobs:
             clang \
             cpio \
             qemu-system-riscv64 \
-            opensbi
+            opensbi \
+            genisoimage
       - name: clone sources
         run: |
           git clone git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git --depth 1
       - name: build kernel
         run: |
+          cp linux_btrfs_defconfig linux/arch/riscv/configs/linux_btrfs_defconfig
           cd linux
-          make defconfig
+          make linux_btrfs_defconfig
           make -j$(nproc)
       - name: build kselftest
         run: |
           cd linux
           make -j$(nproc) kselftest-install
-      - name: create initram
+      - name: generate selftests disk image
         run: |
-          curl -o fedora-container.tar.xz https://dl.fedoraproject.org/pub/alt/risc-v/release/41/Container/riscv64/images/Fedora-Container-Base-Generic-41.20250128.riscv64.oci.tar.xz
-          tar -xf fedora-container.tar.xz
-          rm fedora-container.tar.xz
-          digest="blobs/$(jq .manifests[0].digest -r < index.json | sed 's/:/\//')"
-          rootfs_tar="blobs/$(jq .layers[0].digest -r $digest | sed 's/:/\//')"
-          mkdir -p initramfs-fedora/{bin,sbin,etc,proc,sys,usr/{bin,sbin}}
-          tar -xf $rootfs_tar -C initramfs-fedora
-          mkdir -p initramfs-fedora/selftests/
-          cp -a linux/tools/testing/selftests/kselftest_install/* initramfs-fedora/selftests/
-          cp init initramfs-fedora/
-          chmod +x initramfs-fedora/init
-          cd initramfs-fedora
-          find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs-fedora.cpio.gz
-    #   - name: busybox
-    #     run: |
-    #       curl https://busybox.net/downloads/busybox-1.37.0.tar.bz2 | tar xjf -
-    #       cp busybox_riscv_virt_defconfig busybox-1.37.0/configs/riscv_virt_defconfig
-    #       cd busybox-1.37.0
-    #       make riscv_virt_defconfig
-    #       LDFLAGS="--static" make -j$(nproc)
-    #       make install
-    #       cd ..
-    #       mkdir -p initramfs/{bin,sbin,etc,proc,sys,usr/{bin,sbin}}
-    #       cp -a busybox-1.37.0/_install/* initramfs/
-    #       cp init initramfs/
-    #       chmod +x initramfs/init
-    #       cd initramfs
-    #       find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
+          mkdir -p selftests
+          cp -a linux/tools/testing/selftests/kselftest_install/* selftests/
+          dd if=/dev/zero of=kselftest.img bs=1M count=500
+          mke2fs -t ext4 -d selftests/ kselftest.img
+      - name: initramfs
+        run: |
+          curl https://busybox.net/downloads/busybox-1.37.0.tar.bz2 | tar xjf -
+          cp busybox_riscv_virt_defconfig busybox-1.37.0/configs/riscv_virt_defconfig
+          cd busybox-1.37.0
+          make riscv_virt_defconfig
+          LDFLAGS="--static" make -j$(nproc)
+          make install
+          cd ..
+          mkdir -p initramfs/{bin,sbin,etc,proc,sys,dev,tmp,mnt,usr/{bin,sbin}}
+          mkdir -p initramfs/mnt/{dev,proc,sys,home,etc/systemd/system}
+          cp -a busybox-1.37.0/_install/* initramfs/
+          cp init initramfs/
+          chmod +x initramfs/init
+          cd initramfs
+          find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
+      - name: rootfs and cloud-init
+        run: |
+          curl -o fedora-cloud.qcow2 https://dl.fedoraproject.org/pub/alt/risc-v/release/41/Cloud/riscv64/images/Fedora-Cloud-Base-Generic-41.20250128.riscv64.qcow2
+          genisoimage -output cloud-init.iso -V cidata -J -R cloud-init/user-data cloud-init/meta-data
       - name: run kselftest on QEMU
         run: |
-          qemu-system-riscv64 -nographic -m 512 -machine virt \
+          qemu-system-riscv64 -nographic -m 2G -machine virt \
           -bios /usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.elf \
-          -kernel linux/arch/riscv/boot/Image -append "console=ttyS0 root=/dev/ram" \
-          -initrd initramfs-fedora.cpio.gz
-          - name: Package artifacts
-          run: |
-            # Create a directory for artifacts
-            mkdir -p artifacts
-            # Copy kernel and initramfs
-            cp linux/arch/riscv/boot/Image artifacts/
-            cp initramfs-fedora.cpio.gz artifacts/
-            # Create a tarball
-            tar -czvf kernel-artifacts.tar.gz artifacts/
+          -kernel linux/arch/riscv/boot/Image \
+          -initrd initramfs.cpio.gz \
+          -append "console=ttyS0 root=/dev/vda3" \
+          -drive file=fedora-cloud.qcow2,format=qcow2,id=disk,if=none \
+          -device virtio-blk-device,drive=disk \
+          -drive file=cloud-init.iso,if=virtio,media=cdrom \
+          -drive file=kselftest.img,format=raw,id=kselftest,if=none \
+          -device virtio-blk-device,drive=kselftest \
+          -netdev user,id=net0 \
+          -device virtio-net-device,netdev=net0 \
+          | tee log.txt
+      - name: Package artifacts
+        run: |
+          # Create a directory for artifacts
+          mkdir -p artifacts
+          # Copy kernel and initramfs
+          cp linux/arch/riscv/boot/Image artifacts/
+          cp initramfs.cpio.gz artifacts/
+          cp kselftest.img artifacts/
+          cp cloud-init.iso artifacts/
+          cp log.txt artifacts/
+          # Create a tarball
+          tar -czvf kernel-artifacts.tar.gz artifacts/
       - name: Create release
         id: create_release
         uses: actions/create-release@v1

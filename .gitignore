@@ -3,3 +3,13 @@ bzImage
 initram*
 busybox-*
 fedora-container-*
+blobs/
+index.json
+oci-layout
+test.log
+selftests/
+kselftest.img
+disk.img
+cloud-init.iso
+fedora-cloud.qcow2
+log.txt

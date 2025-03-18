@@ -1,4 +1,27 @@
 #!/bin/sh
-mount -t proc none /proc
-mount -t sysfs none /sys
-exec /selftests/run_kselftest.sh
+
+mkdir -p /proc /sys /dev /tmp /dev/pts
+
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+mount -t tmpfs tmpfs /tmp
+mount -t devtmpfs devtmpfs /dev
+mount -t devpts devpts /dev/pts
+
+mkdir -p /mnt
+mount -t btrfs -o subvol=root /dev/vda3 /mnt
+mkdir -p /mnt/home
+mount -t btrfs -o subvol=home /dev/vda3 /mnt/home
+
+mount --move /dev /mnt/dev
+mount --move /sys /mnt/sys
+mount --move /proc /mnt/proc
+
+mkdir -p /tmp
+mount -t tmpfs tmpfs /tmp
+
+# Disable problematic systemd units
+ln -s /dev/null /mnt/etc/systemd/system/boot-efi.mount
+ln -s /dev/null /mnt/etc/systemd/system/dev-zram0.swap
+
+exec chroot /mnt /sbin/init < /dev/console > /dev/console 2>&1

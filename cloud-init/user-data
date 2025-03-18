@@ -1,0 +1,20 @@
+#cloud-config
+hostname: fedora-cloud
+preserve_hostname: false
+fqdn: fedora-cloud
+
+users:
+  - name: user
+    plain_text_passwd: password
+    lock_passwd: false
+    groups: [wheel]
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+
+bootcmd:
+  - echo "Running selftests"
+  - mount /dev/vdb /mnt
+  - cd /mnt && ./run_kselftest.sh
+
+# packages:
+#   - vim

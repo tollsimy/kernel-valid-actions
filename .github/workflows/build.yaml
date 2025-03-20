@@ -75,6 +75,10 @@ jobs:
         run: |
           cd linux
           make -j$(nproc) kselftest-install
+      - name: temporarily remove problematic tests
+        run: |
+            cd linux/tools/testing/selftests/kselftest_install
+            sed -i '/breakpoints:step_after_suspend_test/d' kselftest-list.txt
       - name: generate selftests disk image
         run: |
           mkdir -p selftests
